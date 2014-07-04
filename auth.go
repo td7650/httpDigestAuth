@@ -7,13 +7,30 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
 )
 
+const (
+	nc = "00000001"
+)
+
 type myjar struct {
 	jar map[string][]*http.Cookie
+}
+
+type digestHeader struct {
+	Realm string
+	Qop string
+	Nonce string
+	Opaque string
+	Algorithm string
+	HA1 string
+	HA2 string
+	Cnonce string
+	Path string
 }
 
 func (p *myjar) SetCookies(u *url.URL, cookies []*http.Cookie) {
@@ -24,45 +41,66 @@ func (p *myjar) Cookies(u *url.URL) []*http.Cookie {
 	return p.jar[u.Host]
 }
 
-func Auth(username string, password string, uri string) (bool, error) {
+func (d *digestHeader) digestChecksum(username string, password string) {
+	switch d.Algorithm {
+	case "MD5":
+		// A1
+		h := md5.New()
+		A1 := fmt.Sprintf("%s:%s:%s", username, d.Realm, password)
+		io.WriteString(h, A1)
+		d.HA1 = fmt.Sprintf("%x", h.Sum(nil))
+
+		// A2
+		h =  md5.New()
+		A2 := fmt.Sprintf("GET:%s", d.Path)
+		io.WriteString(h, A2)
+		d.HA2 = fmt.Sprintf("%x", h.Sum(nil))
+	case "MD5-sess":
+	default:
+		//token
+	}
+}
+
+func (d *digestHeader) Auth(username string, password string, uri string) (bool, error) {
+
 	client := &http.Client{}
 	jar := &myjar{}
 	jar.jar = make(map[string][]*http.Cookie)
 	client.Jar = jar
-	var req *http.Request
-	var resp *http.Response
-	var err error
-	req, err = http.NewRequest("GET", uri, nil)
-	resp, err = client.Do(req)
+
+	req, err := http.NewRequest("GET", uri, nil)
 	if err != nil {
-		return false, err
+		log.Fatal(err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Fatal(err)
 	}
 	if resp.StatusCode == 401 {
-		var authorization map[string]string = DigestAuthParams(resp)
-		realmHeader := authorization["realm"]
-		qopHeader := authorization["qop"]
-		nonceHeader := authorization["nonce"]
-		opaqueHeader := authorization["opaque"]
-		realm := realmHeader
-		// A1
-		h := md5.New()
-		A1 := fmt.Sprintf("%s:%s:%s", username, realm, password)
-		io.WriteString(h, A1)
-		HA1 := fmt.Sprintf("%x", h.Sum(nil))
+		d := &digestHeader{}
+		u, _ := url.Parse(uri)
+		d.Path = u.Path
+		authn := DigestAuthParams(resp)
+		d.Realm = authn["realm"]
+		d.Qop = authn["qop"]
+		d.Nonce = authn["nonce"]
+		d.Opaque = authn["opaque"]
+		d.Algorithm = authn["algorithm"]
+		d.Cnonce = RandomKey()
 
-		// A2
-		h = md5.New()
-		A2 := fmt.Sprintf("GET:%s", "/auth")
-		io.WriteString(h, A2)
-		HA2 := fmt.Sprintf("%x", h.Sum(nil))
+		// HA1 and HA2
+		d.digestChecksum(username, password)
 
 		// response
-		cnonce := RandomKey()
-		response := H(strings.Join([]string{HA1, nonceHeader, "00000001", cnonce, qopHeader, HA2}, ":"))
+		response := H(strings.Join([]string{d.HA1, d.Nonce, nc, d.Cnonce, d.Qop, d.HA2}, ":"))
 
 		// now make header
-		AuthHeader := fmt.Sprintf(`Digest username="%s", realm="%s", nonce="%s", uri="%s", cnonce="%s", nc=00000001, qop=%s, response="%s", opaque="%s", algorithm=MD5`,
-			username, realmHeader, nonceHeader, "/auth", cnonce, qopHeader, response, opaqueHeader)
+		AuthHeader := fmt.Sprintf(`Digest username="%s", realm="%s", nonce="%s", uri="%s", cnonce="%s", nc=00000001, qop=%s, response="%s", algorithm=%s`,
+			username, d.Realm, d.Nonce, d.Path, d.Cnonce, d.Qop, response, d.Algorithm)
+		if d.Opaque != "" {
+			AuthHeader = fmt.Sprintf(`%s, opaque="%s"`, AuthHeader, d.Opaque)
+		}
+
 		req.Header.Set("Authorization", AuthHeader)
 		resp, err = client.Do(req)
 	} else {
@@ -92,6 +130,7 @@ func DigestAuthParams(r *http.Response) map[string]string {
 	}
 	return result
 }
+
 func RandomKey() string {
 	k := make([]byte, 12)
 	for bytes := 0; bytes < len(k); {
