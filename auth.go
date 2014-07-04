@@ -21,7 +21,7 @@ type myjar struct {
 	jar map[string][]*http.Cookie
 }
 
-type digestHeader struct {
+type digestHeaders struct {
 	Realm string
 	Qop string
 	Nonce string
@@ -41,7 +41,7 @@ func (p *myjar) Cookies(u *url.URL) []*http.Cookie {
 	return p.jar[u.Host]
 }
 
-func (d *digestHeader) digestChecksum(username string, password string) {
+func (d *digestHeaders) digestChecksum(username string, password string) {
 	switch d.Algorithm {
 	case "MD5":
 		// A1
@@ -61,7 +61,7 @@ func (d *digestHeader) digestChecksum(username string, password string) {
 	}
 }
 
-func (d *digestHeader) Auth(username string, password string, uri string) (bool, error) {
+func (d *digestHeaders) Auth(username string, password string, uri string) (bool, error) {
 
 	client := &http.Client{}
 	jar := &myjar{}
@@ -77,7 +77,7 @@ func (d *digestHeader) Auth(username string, password string, uri string) (bool,
 		log.Fatal(err)
 	}
 	if resp.StatusCode == 401 {
-		d := &digestHeader{}
+		d := &digestHeaders{}
 		u, _ := url.Parse(uri)
 		d.Path = u.Path
 		authn := DigestAuthParams(resp)
