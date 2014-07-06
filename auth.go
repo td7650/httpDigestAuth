@@ -2,7 +2,7 @@ package http_digest_auth
 
 import (
 	"fmt"
-	//	"io/ioutil"
+	//"io/ioutil"
 	"crypto/md5"
 	"crypto/rand"
 	"encoding/base64"
@@ -13,24 +13,23 @@ import (
 	"strings"
 )
 
-const (
-	nc = "00000001"
-)
-
 type myjar struct {
 	jar map[string][]*http.Cookie
 }
 
 type digestHeaders struct {
-	Realm string
-	Qop string
-	Nonce string
-	Opaque string
+	Realm     string
+	Qop       string
+	Nonce     string
+	Opaque    string
 	Algorithm string
-	HA1 string
-	HA2 string
-	Cnonce string
-	Path string
+	HA1       string
+	HA2       string
+	Cnonce    string
+	Path      string
+	Nc        int16
+	Username  string
+	Password  string
 }
 
 func (p *myjar) SetCookies(u *url.URL, cookies []*http.Cookie) {
@@ -41,17 +40,17 @@ func (p *myjar) Cookies(u *url.URL) []*http.Cookie {
 	return p.jar[u.Host]
 }
 
-func (d *digestHeaders) digestChecksum(username string, password string) {
+func (d *digestHeaders) digestChecksum() {
 	switch d.Algorithm {
 	case "MD5":
 		// A1
 		h := md5.New()
-		A1 := fmt.Sprintf("%s:%s:%s", username, d.Realm, password)
+		A1 := fmt.Sprintf("%s:%s:%s", d.Username, d.Realm, d.Password)
 		io.WriteString(h, A1)
 		d.HA1 = fmt.Sprintf("%x", h.Sum(nil))
 
 		// A2
-		h =  md5.New()
+		h = md5.New()
 		A2 := fmt.Sprintf("GET:%s", d.Path)
 		io.WriteString(h, A2)
 		d.HA2 = fmt.Sprintf("%x", h.Sum(nil))
@@ -61,7 +60,28 @@ func (d *digestHeaders) digestChecksum(username string, password string) {
 	}
 }
 
-func (d *digestHeaders) Auth(username string, password string, uri string) (bool, error) {
+func (d *digestHeaders) Get(uri string) (*http.Response, error) {
+	d.Nc += 0x1
+	u, _ := url.Parse(uri)
+	d.Path = u.Path
+	d.digestChecksum()
+	response := H(strings.Join([]string{d.HA1, d.Nonce, fmt.Sprintf("%08x", d.Nc),
+		d.Cnonce, d.Qop, d.HA2}, ":"))
+	AuthHeader := fmt.Sprintf(`Digest username="%s", realm="%s", nonce="%s", uri="%s", cnonce="%s", nc=%08x, qop=%s, response="%s", algorithm=%s`,
+		d.Username, d.Realm, d.Nonce, d.Path, d.Cnonce, d.Nc, d.Qop, response, d.Algorithm)
+	if d.Opaque != "" {
+		AuthHeader = fmt.Sprintf(`%s, opaque="%s"`, AuthHeader, d.Opaque)
+	}
+	req, err := http.NewRequest("GET", uri, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	req.Header.Set("Authorization", AuthHeader)
+	client := &http.Client{}
+	return client.Do(req)
+}
+
+func (d *digestHeaders) Auth(username string, password string, uri string) (*digestHeaders, error) {
 
 	client := &http.Client{}
 	jar := &myjar{}
@@ -77,36 +97,32 @@ func (d *digestHeaders) Auth(username string, password string, uri string) (bool
 		log.Fatal(err)
 	}
 	if resp.StatusCode == 401 {
+
+		authn := DigestAuthParams(resp)
 		d := &digestHeaders{}
 		u, _ := url.Parse(uri)
 		d.Path = u.Path
-		authn := DigestAuthParams(resp)
 		d.Realm = authn["realm"]
 		d.Qop = authn["qop"]
 		d.Nonce = authn["nonce"]
 		d.Opaque = authn["opaque"]
 		d.Algorithm = authn["algorithm"]
 		d.Cnonce = RandomKey()
+		d.Nc = 0x0
+		d.Username = username
+		d.Password = password
 
-		// HA1 and HA2
-		d.digestChecksum(username, password)
-
-		// response
-		response := H(strings.Join([]string{d.HA1, d.Nonce, nc, d.Cnonce, d.Qop, d.HA2}, ":"))
-
-		// now make header
-		AuthHeader := fmt.Sprintf(`Digest username="%s", realm="%s", nonce="%s", uri="%s", cnonce="%s", nc=00000001, qop=%s, response="%s", algorithm=%s`,
-			username, d.Realm, d.Nonce, d.Path, d.Cnonce, d.Qop, response, d.Algorithm)
-		if d.Opaque != "" {
-			AuthHeader = fmt.Sprintf(`%s, opaque="%s"`, AuthHeader, d.Opaque)
+		resp, err = d.Get(uri)
+		if err != nil {
+			log.Fatal(err)
 		}
-
-		req.Header.Set("Authorization", AuthHeader)
-		resp, err = client.Do(req)
+		if resp.StatusCode != 200 {
+			d = &digestHeaders{}
+		}
+		return d, err
 	} else {
-		return false, fmt.Errorf("response status code should have been 401, it was %v", resp.StatusCode)
+		return nil, fmt.Errorf("response status code should have been 401, it was %v", resp.StatusCode)
 	}
-	return resp.StatusCode == 200, err
 }
 
 /*
