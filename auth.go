@@ -118,6 +118,7 @@ func (d *digestHeaders) Auth(username string, password string, uri string) (*dig
 		}
 		if resp.StatusCode != 200 {
 			d = &digestHeaders{}
+			err = fmt.Errorf("response status code was %v", resp.StatusCode)
 		}
 		return d, err
 	} else {
