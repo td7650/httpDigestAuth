@@ -1,4 +1,4 @@
-package http_digest_auth
+package httpDigestAuth
 
 import (
 	"fmt"
@@ -17,9 +17,11 @@ type myjar struct {
 	jar map[string][]*http.Cookie
 }
 
+// DigestHeaders tracks the state of authentication
 type DigestHeaders struct {
 	Realm     string
 	Qop       string
+	Method    string
 	Nonce     string
 	Opaque    string
 	Algorithm string
@@ -51,7 +53,7 @@ func (d *DigestHeaders) digestChecksum() {
 
 		// A2
 		h = md5.New()
-		A2 := fmt.Sprintf("GET:%s", d.Path)
+		A2 := fmt.Sprintf("%s:%s", d.Method, d.Path)
 		io.WriteString(h, A2)
 		d.HA2 = fmt.Sprintf("%x", h.Sum(nil))
 	case "MD5-sess":
@@ -60,20 +62,25 @@ func (d *DigestHeaders) digestChecksum() {
 	}
 }
 
+// ApplyAuth adds proper auth header to the passed request
 func (d *DigestHeaders) ApplyAuth(req *http.Request) {
 	d.Nc += 0x1
-	d.Path = req.URL.Path
+	d.Cnonce = randomKey()
+	d.Method = req.Method
+	d.Path = req.URL.RequestURI()
 	d.digestChecksum()
-	response := H(strings.Join([]string{d.HA1, d.Nonce, fmt.Sprintf("%08x", d.Nc),
+	response := h(strings.Join([]string{d.HA1, d.Nonce, fmt.Sprintf("%08x", d.Nc),
 		d.Cnonce, d.Qop, d.HA2}, ":"))
 	AuthHeader := fmt.Sprintf(`Digest username="%s", realm="%s", nonce="%s", uri="%s", cnonce="%s", nc=%08x, qop=%s, response="%s", algorithm=%s`,
 		d.Username, d.Realm, d.Nonce, d.Path, d.Cnonce, d.Nc, d.Qop, response, d.Algorithm)
 	if d.Opaque != "" {
 		AuthHeader = fmt.Sprintf(`%s, opaque="%s"`, AuthHeader, d.Opaque)
 	}
+	fmt.Printf("%v\n", AuthHeader)
 	req.Header.Set("Authorization", AuthHeader)
 }
 
+// Auth authenticates against a given URI
 func (d *DigestHeaders) Auth(username string, password string, uri string) (*DigestHeaders, error) {
 
 	client := &http.Client{}
@@ -91,11 +98,11 @@ func (d *DigestHeaders) Auth(username string, password string, uri string) (*Dig
 	}
 	if resp.StatusCode == 401 {
 
-		authn := DigestAuthParams(resp)
+		authn := digestAuthParams(resp)
 		algorithm := authn["algorithm"]
 		d := &DigestHeaders{}
 		u, _ := url.Parse(uri)
-		d.Path = u.Path
+		d.Path = u.RequestURI()
 		d.Realm = authn["realm"]
 		d.Qop = authn["qop"]
 		d.Nonce = authn["nonce"]
@@ -105,7 +112,6 @@ func (d *DigestHeaders) Auth(username string, password string, uri string) (*Dig
 		} else {
 			d.Algorithm = authn["algorithm"]
 		}
-		d.Cnonce = RandomKey()
 		d.Nc = 0x0
 		d.Username = username
 		d.Password = password
@@ -121,9 +127,8 @@ func (d *DigestHeaders) Auth(username string, password string, uri string) (*Dig
 			err = fmt.Errorf("response status code was %v", resp.StatusCode)
 		}
 		return d, err
-	} else {
-		return nil, fmt.Errorf("response status code should have been 401, it was %v", resp.StatusCode)
 	}
+	return nil, fmt.Errorf("response status code should have been 401, it was %v", resp.StatusCode)
 }
 
 /*
@@ -131,7 +136,7 @@ Parse Authorization header from the http.Request. Returns a map of
 auth parameters or nil if the header is not a valid parsable Digest
 auth header.
 */
-func DigestAuthParams(r *http.Response) map[string]string {
+func digestAuthParams(r *http.Response) map[string]string {
 	s := strings.SplitN(r.Header.Get("Www-Authenticate"), " ", 2)
 	if len(s) != 2 || s[0] != "Digest" {
 		return nil
@@ -148,7 +153,7 @@ func DigestAuthParams(r *http.Response) map[string]string {
 	return result
 }
 
-func RandomKey() string {
+func randomKey() string {
 	k := make([]byte, 12)
 	for bytes := 0; bytes < len(k); {
 		n, err := rand.Read(k[bytes:])
@@ -163,7 +168,7 @@ func RandomKey() string {
 /*
 H function for MD5 algorithm (returns a lower-case hex MD5 digest)
 */
-func H(data string) string {
+func h(data string) string {
 	digest := md5.New()
 	digest.Write([]byte(data))
 	return fmt.Sprintf("%x", digest.Sum(nil))
