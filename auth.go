@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 type myjar struct {
@@ -83,10 +84,14 @@ func (d *DigestHeaders) ApplyAuth(req *http.Request) {
 // Auth authenticates against a given URI
 func (d *DigestHeaders) Auth(username string, password string, uri string) (*DigestHeaders, error) {
 
-	client := &http.Client{}
-	jar := &myjar{}
-	jar.jar = make(map[string][]*http.Cookie)
-	client.Jar = jar
+	client := &http.Client{
+		Transport: &http.Transport{
+			MaxIdleConnsPerHost: 10,
+			DisableCompression:  true,
+		},
+		Timeout: time.Duration(10 * time.Second),
+		Jar:     &myjar{jar: make(map[string][]*http.Cookie)},
+	}
 
 	req, err := http.NewRequest("GET", uri, nil)
 	if err != nil {
