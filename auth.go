@@ -94,11 +94,13 @@ func (d *DigestHeaders) Auth(username string, password string, uri string) (*Dig
 
 	req, err := http.NewRequest("GET", uri, nil)
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("error in auth package: %v", err)
+		return d, err
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("error in auth package: %v", err)
+		return d, err
 	}
 	defer resp.Body.Close()
 
@@ -126,7 +128,8 @@ func (d *DigestHeaders) Auth(username string, password string, uri string) (*Dig
 		d.ApplyAuth(req)
 		resp, err = client.Do(req)
 		if err != nil {
-			log.Fatal(err)
+			log.Printf("error in auth package: %v", err)
+			return d, err
 		}
 		if resp.StatusCode != 200 {
 			d = &DigestHeaders{}
