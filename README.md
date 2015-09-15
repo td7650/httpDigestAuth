@@ -2,7 +2,7 @@ http-digest-auth-client
 =======================
 
 Go (golang) http digest authentication client.
-Updated README
+
 This fork includes the following changes:
 
 - Changed MD5 hash generation to clean up some code
