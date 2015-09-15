@@ -100,6 +100,8 @@ func (d *DigestHeaders) Auth(username string, password string, uri string) (*Dig
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer resp.Body.Close()
+
 	if resp.StatusCode == 401 {
 
 		authn := digestAuthParams(resp)
