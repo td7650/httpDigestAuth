@@ -2,11 +2,9 @@ package httpDigestAuth
 
 import (
 	"fmt"
-	//"io/ioutil"
 	"crypto/md5"
 	"crypto/rand"
 	"encoding/base64"
-	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -44,23 +42,22 @@ func (p *myjar) Cookies(u *url.URL) []*http.Cookie {
 }
 
 func (d *DigestHeaders) digestChecksum() {
+
+	// check algorithm to use
 	switch d.Algorithm {
 	case "MD5":
-		// A1
-		h := md5.New()
-		A1 := fmt.Sprintf("%s:%s:%s", d.Username, d.Realm, d.Password)
-		io.WriteString(h, A1)
-		d.HA1 = fmt.Sprintf("%x", h.Sum(nil))
+		// HA1=MD5(username:realm:password)
+		d.HA1 = fmt.Sprintf("%x",md5.Sum([]byte(fmt.Sprintf("%s:%s:%s", d.Username, d.Realm, d.Password))))
 
-		// A2
-		h = md5.New()
-		A2 := fmt.Sprintf("%s:%s", d.Method, d.Path)
-		io.WriteString(h, A2)
-		d.HA2 = fmt.Sprintf("%x", h.Sum(nil))
 	case "MD5-sess":
-	default:
-		//token
+		// HA1=MD5(MD5(username:realm:password):nonce:cnonce)
+		d.HA1 = fmt.Sprintf("%x",md5.Sum([]byte(fmt.Sprintf("%x:%s:%s", md5.Sum([]byte(fmt.Sprintf("%s:%s:%s",
+			d.Username, d.Realm, d.Password))), d.Nonce, d.Cnonce))))
+
 	}
+
+	d.HA2 = fmt.Sprintf("%x",md5.Sum([]byte(fmt.Sprintf("%s:%s", d.Method, d.Path))))
+
 }
 
 // ApplyAuth adds proper auth header to the passed request
@@ -70,14 +67,16 @@ func (d *DigestHeaders) ApplyAuth(req *http.Request) {
 	d.Method = req.Method
 	d.Path = req.URL.RequestURI()
 	d.digestChecksum()
-	response := h(strings.Join([]string{d.HA1, d.Nonce, fmt.Sprintf("%08x", d.Nc),
-		d.Cnonce, d.Qop, d.HA2}, ":"))
+
+	response := fmt.Sprintf("%x",md5.Sum([]byte(strings.Join([]string{d.HA1, d.Nonce, fmt.Sprintf("%08x", d.Nc),
+		d.Cnonce, d.Qop, d.HA2}, ":"))))
+
 	AuthHeader := fmt.Sprintf(`Digest username="%s", realm="%s", nonce="%s", uri="%s", cnonce="%s", nc=%08x, qop=%s, response="%s", algorithm=%s`,
 		d.Username, d.Realm, d.Nonce, d.Path, d.Cnonce, d.Nc, d.Qop, response, d.Algorithm)
 	if d.Opaque != "" {
 		AuthHeader = fmt.Sprintf(`%s, opaque="%s"`, AuthHeader, d.Opaque)
 	}
-	fmt.Printf("%v\n", AuthHeader)
+
 	req.Header.Set("Authorization", AuthHeader)
 }
 
@@ -170,11 +169,3 @@ func randomKey() string {
 	return base64.StdEncoding.EncodeToString(k)
 }
 
-/*
-H function for MD5 algorithm (returns a lower-case hex MD5 digest)
-*/
-func h(data string) string {
-	digest := md5.New()
-	digest.Write([]byte(data))
-	return fmt.Sprintf("%x", digest.Sum(nil))
-}
