@@ -11,26 +11,26 @@ Go (golang) http digest authentication client.
  
 ###Usage
 
-```
+```go
 import (
- 	"net/http"
- 	httpDigestAuth "github.com/pteich/http-digest-auth-client"
+    "net/http"
+    httpDigestAuth "github.com/pteich/http-digest-auth-client"
 )
  
 var DigestAuth *httpDigestAuth.DigestHeaders
  
 func main() {
 
-  httpClient := http.Client{}
+    httpClient := http.Client{}
 
-	DigestAuth = &httpDigestAuth.DigestHeaders{}
-	DigestAuth, err = DigestAuth.Auth("user","pass","url")
+    DigestAuth = &httpDigestAuth.DigestHeaders{}
+    DigestAuth, err = DigestAuth.Auth("user","pass","url")
 	
-  req, err := http.NewRequest("GET", "url", body)	
+    req, err := http.NewRequest("GET", "url", body)	
 	
-	DigestAuth.ApplyAuth(req)
+    DigestAuth.ApplyAuth(req)
 
-  resp, err := httpClient.Do(req)
+    resp, err := httpClient.Do(req)
 }
  
  ```
