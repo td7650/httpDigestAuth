@@ -131,6 +131,7 @@ func (d *DigestHeaders) Auth(username string, password string, uri string) (*Dig
 			log.Printf("error in auth package: %v", err)
 			return d, err
 		}
+		defer resp.Body.Close()
 		if resp.StatusCode != 200 {
 			d = &DigestHeaders{}
 			err = fmt.Errorf("response status code was %v", resp.StatusCode)
