@@ -166,11 +166,9 @@ func digestAuthParams(r *http.Response) map[string]string {
 func randomKey() string {
 	k := make([]byte, 12)
 	for bytes := 0; bytes < len(k); {
-		n, err := rand.Read(k[bytes:])
-		if err != nil {
-			panic("rand.Read() failed")
+		if n, err := rand.Read(k[bytes:]); err==nil {
+			bytes += n
 		}
-		bytes += n
 	}
 	return base64.StdEncoding.EncodeToString(k)
 }
