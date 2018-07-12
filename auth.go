@@ -123,19 +123,6 @@ func (d *DigestHeaders) Auth(username string, password string, uri string) (*Dig
 		d.Nc = 0x0
 		d.Username = username
 		d.Password = password
-
-		req, err = http.NewRequest("GET", uri, nil)
-		d.ApplyAuth(req)
-		resp, err = client.Do(req)
-		if err != nil {
-			log.Printf("error in auth package: %v", err)
-			return d, err
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != 200 {
-			d = &DigestHeaders{}
-			err = fmt.Errorf("response status code was %v", resp.StatusCode)
-		}
 		return d, err
 	} else if resp.StatusCode == 200 {
 		log.Printf("response status code was 200. Ignoring auth")
